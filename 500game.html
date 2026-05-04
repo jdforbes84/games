@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>500 Card Game - Final Verified Rules</title>
+    <style>
+        body { font-family: sans-serif; background: #2e7d32; color: white; margin: 0; padding: 20px; }
+        #game-container { max-width: 1100px; margin: 0 auto; text-align: center; display: flex; flex-direction: column; }
+        .main-layout { display: flex; justify-content: center; align-items: flex-start; gap: 20px; }
+        .game-board { flex-grow: 1; }
+        
+        #tally-sidebar { width: 220px; background: rgba(0,0,0,0.4); padding: 15px; border-radius: 10px; text-align: left; }
+        #tally-sidebar h3 { margin-top: 0; font-size: 1em; border-bottom: 1px solid #fff; padding-bottom: 5px; }
+        .tally-item { margin: 10px 0; font-weight: bold; }
+
+        #result-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); 
+                          display: none; justify-content: center; align-items: center; z-index: 100; }
+        .result-box { background: white; color: black; padding: 30px; border-radius: 15px; text-align: center; max-width: 450px; }
+        .result-box button { background: #2e7d32; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-size: 1em; margin-top: 15px; }
+
+        .hand { display: flex; justify-content: center; gap: 10px; margin: 20px 0; min-height: 120px; padding: 10px; background: rgba(255,255,255,0.1); border-radius: 10px; }
+        .card { width: 70px; height: 100px; background: white; color: black; border-radius: 8px; display: flex; flex-direction: column; justify-content: center; align-items: center; border: 2px solid #333; cursor: pointer; font-weight: bold; font-size: 0.9em; transition: transform 0.2s; position: relative; }
+        .card.red { color: #d32f2f; }
+        .card.selected { border-color: #ffeb3b; transform: translateY(-15px); box-shadow: 0 5px 15px rgba(0,0,0,0.5); }
+        .your-turn { border: 3px solid #ffeb3b; box-shadow: 0 0 15px #ffeb3b; }
+
+        #table-center { display: grid; grid-template-areas: ". north ." "west . east" ". south ."; gap: 15px; width: 300px; height: 300px; margin: 10px auto; background: rgba(0,0,0,0.1); border-radius: 50%; padding: 20px; border: 2px dashed rgba(255,255,255,0.2); }
+        .slot-0 { grid-area: south; } .slot-1 { grid-area: west; } .slot-2 { grid-area: north; } .slot-3 { grid-area: east; }
+        
+        .dealer-badge { background: #ffeb3b; color: black; border-radius: 50%; padding: 2px 6px; font-size: 0.7em; margin-left: 5px; display: none; }
+        .is-dealer .dealer-badge { display: inline-block; }
+        .sitting-out { opacity: 0.3; filter: grayscale(1); }
+
+        .player-label { font-weight: bold; display: block; margin-bottom: 2px; }
+        .bid-status-label { font-size: 0.9em; color: #ffeb3b; font-style: italic; display: block; min-height: 1.2em; margin-bottom: 5px; }
+        .hidden { display: none; }
+        table { margin: 10px auto; border-collapse: collapse; background: white; color: black; }
+        td, th { border: 1px solid #ccc; padding: 8px 12px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<div id="result-overlay">
+    <div class="result-box">
+        <h2 id="hand-title"></h2>
+        <p id="hand-details"></p>
+        <p><strong id="new-scores"></strong></p>
+        <button id="next-action-btn" onclick="closeResult()">Next Hand</button>
+    </div>
+</div>
+
+<div id="game-container">
+    <h1>500 Card Game</h1>
+    <div class="ai-config">
+        Difficulty: <select id="difficulty"><option value="easy">Easy</option><option value="hard">Hard</option></select>
+        <button onclick="startGame()">Start New Game</button>
+    </div>
+
+    <div id="active-bid-display" style="color:#ffeb3b; font-weight:bold; margin-bottom:10px;"></div>
+    <div id="status" style="font-weight:bold; margin-bottom:10px;">Click Start to Play.</div>
+
+    <div class="main-layout">
+        <div id="tally-sidebar">
+            <h3>Tricks Won (Hand)</h3>
+            <div class="tally-item">Team 1: <span id="tricks-team-1">0</span></div>
+            <div class="tally-item">Team 2: <span id="tricks-team-2">0</span></div>
+            <br>
+            <h3>Total Game Score</h3>
+            <div class="tally-item">Team 1: <span id="score-1">0</span></div>
+            <div class="tally-item">Team 2: <span id="score-2">0</span></div>
+        </div>
+
+        <div class="game-board">
+            <div id="bidding-screen" class="hidden">
+                <table id="bid-table"></table>
+                <button onclick="makeBid('pass')">Pass</button>
+                <button onclick="makeBid('misere')">No Trick (250pts)</button>
+            </div>
+
+            <div id="widow-screen" class="hidden">
+                <h3 id="discard-instruction"></h3>
+                <button onclick="confirmDiscard()">Confirm Discard</button>
+            </div>
+
+            <div id="play-area">
+                <div id="player-container-2">
+                    <span class="player-label">Partner (CPU 2) <span class="dealer-badge">D</span></span>
+                    <span id="bid-label-2" class="bid-status-label"></span>
+                </div>
+                
+                <div style="display:flex; justify-content: center; align-items: center;">
+                    <div id="player-container-1" style="margin-right: 30px;">
+                        <span class="player-label">CPU 1 <span class="dealer-badge">D</span></span>
+                        <span id="bid-label-1" class="bid-status-label"></span>
+                    </div>
+                    <div id="table-center"></div>
+                    <div id="player-container-3" style="margin-left: 30px;">
+                        <span class="player-label">CPU 3 <span class="dealer-badge">D</span></span>
+                        <span id="bid-label-3" class="bid-status-label"></span>
+                    </div>
+                </div>
+
+                <div id="player-container-0">
+                    <span class="player-label">You <span class="dealer-badge">D</span></span>
+                    <span id="bid-label-0" class="bid-status-label"></span>
+                </div>
+                <div id="player-hand" class="hand"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+/** * GLOBALS & DATA
+ */
+const SUITS = ['Spades', 'Clubs', 'Diamonds', 'Hearts'];
+const VALUES = ['4', '5', '6', '7', '8', '9', '10', 'Jack', 'Queen', 'King', 'Ace'];
+const BID_VALUES = { 'Spades': 40, 'Clubs': 60, 'Diamonds': 80, 'Hearts': 100, 'No Trump': 120 };
+
+let deck = [], hands = [[], [], [], []], widow = [];
+let currentBid = { value: 0, player: -1, suit: '', tricks: 0 };
+let dealerIndex = 3, biddingTurn = 0, gameState = 'IDLE', turn = -1;
+let selectedCards = [], scores = [0, 0], tricksWon = [0, 0];
+let currentTrick = [], leadSuit = null, discardRequired = 5;
+let isGameOver = false, sittingPartner = -1;
+
+/** * CARD POWER & SUIT LOGIC 
+ */
+function getEffectiveSuit(card) {
+    // Joker is highest trump if a suit is bid
+    if (card.value === 'Joker') {
+        if (currentBid.suit && currentBid.suit !== 'No Trump' && currentBid.suit !== 'None') {
+            return currentBid.suit;
+        }
+        return leadSuit || 'Joker'; // In No-Trump, it follows lead suit if played later
+    }
+    
+    if (!currentBid.suit || ['No Trump', 'None'].includes(currentBid.suit)) return card.suit;
+    
+    // Left Bower logic: Jack of same color as trump is trump
+    if (card.value === 'Jack') {
+        const pairs = { 'Spades': 'Clubs', 'Clubs': 'Spades', 'Hearts': 'Diamonds', 'Diamonds': 'Hearts' };
+        if (card.suit === pairs[currentBid.suit]) return currentBid.suit;
+    }
+    return card.suit;
+}
+
+function getCardPower(card, trumpSuit) {
+    const valueOrder = { '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, 'Jack': 11, 'Queen': 12, 'King': 13, 'Ace': 14, 'Joker': 25 };
+    if (card.value === 'Joker') return 25; 
+    
+    if (trumpSuit && !['No Trump', 'None'].includes(trumpSuit)) {
+        const pairs = { 'Spades': 'Clubs', 'Clubs': 'Spades', 'Hearts': 'Diamonds', 'Diamonds': 'Hearts' };
+        if (card.value === 'Jack' && card.suit === trumpSuit) return 22; // Right Bower
+        if (card.value === 'Jack' && card.suit === pairs[trumpSuit]) return 21; // Left Bower
+    }
+    return valueOrder[card.value];
+}
+
+function sortHand(hand) {
+    const trump = currentBid.suit;
+    const suitOrder = { 'Spades': 0, 'Clubs': 1, 'Diamonds': 2, 'Hearts': 3, 'No Trump': 4, 'None': 5 };
+    return hand.sort((a, b) => {
+        let aS = getEffectiveSuit(a), bS = getEffectiveSuit(b);
+        if (aS !== bS) return suitOrder[aS] - suitOrder[bS];
+        return getCardPower(a, trump) - getCardPower(b, trump);
+    });
+}
+
+/** * GAME FLOW
+ */
+function startGame() { scores = [0, 0]; dealerIndex = 3; isGameOver = false; updateScoreboard(); newHand(); }
+
+function newHand() {
+    if (isGameOver) return;
+    dealerIndex = (dealerIndex + 1) % 4; // Dealer responsibility rotates left
+    sittingPartner = -1;
+    for(let i=0; i<4; i++) {
+        document.getElementById(`player-container-${i}`).classList.remove('is-dealer', 'sitting-out');
+        document.getElementById(`bid-label-${i}`).innerText = "";
+    }
+    document.getElementById(`player-container-${dealerIndex}`).classList.add('is-dealer');
+    biddingTurn = (dealerIndex + 1) % 4; // Starts with player left of dealer
+
+    // Create 45-card deck (remove 2s and 3s)
+    deck = [];
+    SUITS.forEach(s => VALUES.forEach(v => deck.push({ suit: s, value: v, color: (s === 'Hearts' || s === 'Diamonds') ? 'red' : 'black' })));
+    deck.push({ suit: 'None', value: 'Joker', color: 'black' });
+    deck.sort(() => Math.random() - 0.5);
+
+    tricksWon = [0, 0]; updateTally();
+    document.getElementById('table-center').innerHTML = '';
+    document.getElementById('active-bid-display').style.display = 'none';
+    
+    // Deal 10 to each, 5 to widow
+    hands = [deck.slice(0, 10), deck.slice(10, 20), deck.slice(20, 30), deck.slice(30, 40)];
+    widow = deck.slice(40, 45);
+    renderHand();
+    setupBidding();
+}
+
+function setupBidding() {
+    gameState = 'BIDDING';
+    currentBid = { value: 0, player: -1, suit: '', tricks: 0 };
+    document.getElementById('bidding-screen').classList.remove('hidden');
+    const table = document.getElementById('bid-table');
+    table.innerHTML = `<tr><th>Tricks</th><th>S</th><th>C</th><th>D</th><th>H</th><th>NT</th></tr>`;
+    for (let t = 6; t <= 10; t++) {
+        let row = `<tr><td>${t}</td>`;
+        ['Spades', 'Clubs', 'Diamonds', 'Hearts', 'No Trump'].forEach(s => {
+            let val = BID_VALUES[s] + ((t - 6) * 100);
+            row += `<td onclick="makeBid(${val}, '${s}', ${t})">${val}</td>`;
+        });
+        table.innerHTML += row + `</tr>`;
+    }
+    nextBidding();
+}
+
+function nextBidding() {
+    if (biddingTurn === 0) document.getElementById('status').innerText = "YOUR TURN TO BID";
+    else { document.getElementById('status').innerText = `CPU ${biddingTurn} is bidding...`; setTimeout(cpuBid, 600); }
+}
+
+function cpuBid() {
+    let nextVal = (currentBid.value === 0) ? 60 : currentBid.value + 20;
+    if (Math.random() > 0.93 && nextVal < 420) makeBid(nextVal, 'Clubs', 7);
+    else makeBid('pass');
+}
+
+function makeBid(val, suit, tricks) {
+    const lbl = document.getElementById(`bid-label-${biddingTurn}`);
+    if (val === 'pass') lbl.innerText = "Pass";
+    else {
+        if (val === 'misere') val = 250; 
+        if (val <= currentBid.value) { if (biddingTurn === 0) alert("Higher bid required!"); return; } 
+        currentBid = { value: val, player: biddingTurn, suit: (val === 250 ? 'None' : suit), tricks: (val === 250 ? 0 : tricks) };
+        lbl.innerText = (val === 250) ? "Misere" : `${tricks} ${suit}`;
+    }
+    biddingTurn = (biddingTurn + 1) % 4;
+    if (biddingTurn === (dealerIndex + 1) % 4) setTimeout(resolveBidding, 400);
+    else nextBidding();
+}
+
+function resolveBidding() {
+    document.getElementById('bidding-screen').classList.add('hidden');
+    if (currentBid.player === -1) { document.getElementById('status').innerText = "Everyone passed. Redealing..."; setTimeout(newHand, 1200); return; }
+    
+    if (currentBid.value === 250) {
+        sittingPartner = (currentBid.player + 2) % 4;
+        document.getElementById(`player-container-${sittingPartner}`).classList.add('sitting-out');
+    }
+
+    const players = ["You", "CPU 1", "Partner", "CPU 3"];
+    document.getElementById('active-bid-display').style.display = 'block';
+    document.getElementById('active-bid-display').innerText = `CONTRACT: ${currentBid.value === 250 ? "Misere" : currentBid.tricks + " " + currentBid.suit} (${players[currentBid.player]})`;
+    
+    if (currentBid.player === 0) startWidow();
+    else { gameState = 'PLAYING'; turn = currentBid.player; if (turn !== 0) setTimeout(cpuTurn, 800); }
+}
+
+function startWidow() {
+    gameState = 'WIDOW';
+    hands[0] = [...hands[0], ...widow];
+    if (currentBid.value === 250) {
+        discardRequired = 6; 
+        hands[2].sort((a,b) => getCardPower(b, 'None') - getCardPower(a, 'None'));
+        hands[0].push(hands[2].splice(0,1)[0]); // Partner passes 1 card for Misere
+        hands[2] = []; 
+        document.getElementById('discard-instruction').innerText = "MISERE: Partner passed 1 card. Discard 6.";
+    } else {
+        discardRequired = 5; 
+        document.getElementById('discard-instruction').innerText = "Widow Taken. Discard 5 cards.";
+    }
+    document.getElementById('widow-screen').classList.remove('hidden');
+    renderHand();
+}
+
+function confirmDiscard() {
+    if (selectedCards.length !== discardRequired) return;
+    hands[0] = hands[0].filter((_, i) => !selectedCards.includes(i));
+    selectedCards = [];
+    document.getElementById('widow-screen').classList.add('hidden');
+    gameState = 'PLAYING'; turn = currentBid.player; // Bid winner leads trick 1
+    renderHand();
+    if (turn !== 0) setTimeout(cpuTurn, 800);
+}
+
+/** * GAMEPLAY: TRICKS & TURNS 
+ */
+function playCard(pIdx, cIdx) {
+    const card = hands[pIdx][cIdx];
+    const eSuit = getEffectiveSuit(card);
+    
+    // Follow Suit Rule & Joker in No-Trump logic
+    if (pIdx === 0 && leadSuit && eSuit !== leadSuit) {
+        // Joker in No-Trump can be played any time [user instruction]
+        const isJokerNoTrump = (card.value === 'Joker' && (currentBid.suit === 'No Trump' || currentBid.suit === 'None'));
+        if (!isJokerNoTrump) {
+            const hasLead = hands[0].some(c => getEffectiveSuit(c) === leadSuit);
+            if (hasLead) { alert("You must follow suit!"); return; }
+        }
+    }
+    
+    hands[pIdx].splice(cIdx, 1);
+    currentTrick.push({ player: pIdx, card: card });
+    
+    const div = document.createElement('div');
+    div.className = `card ${card.color} slot-${pIdx}`;
+    div.innerHTML = `<span>${card.value}</span><span>${card.suit === 'None' ? '🃏' : card.suit}</span>`;
+    document.getElementById('table-center').appendChild(div);
+    
+    if (currentTrick.length === 1) leadSuit = eSuit;
+    
+    turn = (pIdx + 1) % 4;
+    if (turn === sittingPartner) turn = (turn + 1) % 4;
+
+    const count = sittingPartner === -1 ? 4 : 3;
+    if (currentTrick.length < count) {
+        if (turn !== 0) setTimeout(cpuTurn, 600); else renderHand();
+    } else setTimeout(resolveTrick, 1000);
+}
+
+function cpuTurn() {
+    const hand = hands[turn];
+    let moves = hand.map((_, i) => i).filter(i => {
+        const eS = getEffectiveSuit(hand[i]);
+        const isJokerNT = (hand[i].value === 'Joker' && (currentBid.suit === 'No Trump' || currentBid.suit === 'None'));
+        return eS === leadSuit || !leadSuit || isJokerNT;
+    });
+    if (moves.length === 0) moves = hand.map((_, i) => i);
+    playCard(turn, moves[0]);
+}
+
+function resolveTrick() {
+    let winIdx = currentTrick[0].player;
+    let bestP = -1;
+    
+    currentTrick.forEach(p => {
+        let pwr = getCardPower(p.card, currentBid.suit);
+        let s = getEffectiveSuit(p.card);
+        let curWinS = getEffectiveSuit(currentTrick.find(x => x.player === winIdx).card);
+        
+        // Trump dominance or follow-suit hierarchy
+        if (s === currentBid.suit && curWinS !== currentBid.suit) { bestP = pwr; winIdx = p.player; }
+        else if (s === curWinS && pwr > bestP) { bestP = pwr; winIdx = p.player; }
+    });
+
+    tricksWon[(winIdx % 2 === 0) ? 0 : 1]++;
+    updateTally();
+    document.getElementById('table-center').innerHTML = '';
+    currentTrick = []; leadSuit = null; turn = winIdx; // Winner leads next trick
+
+    if (hands[currentBid.player].length === 0 && hands[0].length === 0) endHand();
+    else { renderHand(); if (turn !== 0) setTimeout(cpuTurn, 700); }
+}
+
+/** * SCORING 
+ */
+function endHand() {
+    let bidTeam = (currentBid.player % 2 === 0) ? 0 : 1;
+    let oppTeam = (bidTeam === 0) ? 1 : 0;
+    let made = false, pts = 0, oppPts = 0;
+
+    if (currentBid.value === 250) { 
+        if (tricksWon[bidTeam] === 0) { made = true; pts = 250; }
+        else { made = false; pts = -250; oppPts = tricksWon[bidTeam] * 10; }
+    } else {
+        if (tricksWon[bidTeam] === 10) { made = true; pts = Math.max(250, currentBid.value); }
+        else if (tricksWon[bidTeam] >= currentBid.tricks) { made = true; pts = currentBid.value; }
+        else { made = false; pts = -currentBid.value; }
+    }
+
+    scores[bidTeam] += pts; scores[oppTeam] += oppPts;
+    if (scores[0] >= 500 || scores[1] >= 500 || scores[0] <= -500 || scores[1] <= -500) isGameOver = true;
+    showHandResult(made, bidTeam, pts, oppPts);
+}
+
+function showHandResult(made, team, diff, oppDiff) {
+    const overlay = document.getElementById('result-overlay');
+    document.getElementById('hand-title').innerText = isGameOver ? "Game Over!" : (made ? "Success!" : "Failed!");
+    let msg = `Team ${team + 1} ${made ? 'gained' : 'lost'} ${Math.abs(diff)} points.`;
+    if (oppDiff > 0) msg += `<br>Defense gained ${oppDiff} points.`;
+    document.getElementById('hand-details').innerHTML = msg;
+    document.getElementById('new-scores').innerText = `Final: T1: ${scores[0]} | T2: ${scores[1]}`;
+    overlay.style.display = 'flex';
+}
+
+function closeResult() {
+    document.getElementById('result-overlay').style.display = 'none';
+    updateScoreboard();
+    if (isGameOver) startGame(); else newHand();
+}
+
+function updateTally() {
+    document.getElementById('tricks-team-1').innerText = tricksWon[0];
+    document.getElementById('tricks-team-2').innerText = tricksWon[1];
+}
+function updateScoreboard() {
+    document.getElementById('score-1').innerText = scores[0];
+    document.getElementById('score-2').innerText = scores[1];
+}
+function renderHand() {
+    const container = document.getElementById('player-hand');
+    container.innerHTML = '';
+    if (gameState === 'PLAYING' && turn === 0) {
+        container.classList.add('your-turn');
+        document.getElementById('status').innerText = "YOUR TURN";
+    } else container.classList.remove('your-turn');
+    
+    hands[0] = sortHand(hands[0]);
+    hands[0].forEach((card, i) => {
+        const div = document.createElement('div');
+        div.className = `card ${card.color} ${selectedCards.includes(i) ? 'selected' : ''}`;
+        div.innerHTML = `<span>${card.value}</span><span>${card.suit === 'None' ? '🃏' : card.suit}</span>`;
+        div.onclick = () => {
+            if (gameState === 'WIDOW') { 
+                if (selectedCards.includes(i)) selectedCards = selectedCards.filter(x => x !== i); 
+                else if (selectedCards.length < discardRequired) selectedCards.push(i); renderHand(); 
+            }
+            else if (gameState === 'PLAYING' && turn === 0) playCard(0, i);
+        };
+        container.appendChild(div);
+    });
+}
+</script>
+</body>
+</html>
